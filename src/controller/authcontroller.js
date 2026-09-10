@@ -2,6 +2,7 @@ const userModel = require('../models/user');
 const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const uplaodFile = require("../services/storage.services");
 const router = express.Router();
 async function  registerUser(req, res){
     const hashedPassword = await bcrypt.hash(req.body.password,10);
@@ -52,4 +53,45 @@ async function loginUser(req, res) {
         message: "Login successful"
     });
 }
-module.exports = {registerUser, loginUser};
+async function updateProfile(req, res) {
+  try {
+    const userId = req.user.id;
+
+    const { name, username, bio } = req.body;
+
+    const updateData = {
+      name,
+      username,
+      bio,
+    };
+
+    if (req.file) {
+      const result = await uplaodFile(req.file.buffer);
+      updateData.profilePicture = result.url;
+    }
+
+    const updatedUser = await userModel.findByIdAndUpdate(
+      userId,
+      updateData,
+      { new: true }
+    ).select("-password -confirmPassword");
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Profile updated successfully",
+      user: updatedUser,
+    });
+  } catch (error) {
+    console.log("UPDATE PROFILE ERROR:", error);
+
+    return res.status(500).json({
+      message: error.message,
+    });
+  }
+}
+module.exports = {registerUser, loginUser, updateProfile};

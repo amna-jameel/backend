@@ -9,4 +9,4 @@ const connectDB = require("./src/db/db");
 connectDB();
 app.listen(5000, "0.0.0.0", () => {
   console.log("Server running on port 5000");
-});
+}); 
