@@ -1,58 +1,131 @@
-const userModel = require('../models/user');
-const express = require('express');
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
+
+const userModel = require("../models/user");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
 const uplaodFile = require("../services/storage.services");
-const router = express.Router();
-async function  registerUser(req, res){
-    const hashedPassword = await bcrypt.hash(req.body.password,10);
+
+// =========================
+// REGISTER USER
+// =========================
+async function registerUser(req, res) {
+  try {
+    const { username, email, password, confirmPassword } = req.body;
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        message: "Minimum password length should be 6",
+      });
+    }
+
+    if (password !== confirmPassword) {
+      return res.status(400).json({
+        message: "Password and confirm password do not match",
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
     const user = new userModel({
-        username : req.body.username,
-        email : req.body.email,
-        password : hashedPassword,
-        confirmPassword : hashedPassword
+      username,
+      email,
+      password: hashedPassword,
+      confirmPassword: hashedPassword,
     });
-    if (req.body.password.length < 6) {
-    return res.status(400).json({
-        message: "Minimum password length should be 6"
-    });
-}
-if (req.body.password !== req.body.confirmPassword) {
-    return res.status(400).json({
-        message: "Password and confirm password do not match"
-    });
-}
+
     await user.save();
-  res.status(200).json({
-    message: "user registered successfully"
-});
-    
+
+    return res.status(200).json({
+      message: "User registered successfully",
+    });
+  } catch (error) {
+    console.log("REGISTER ERROR:", error);
+
+    return res.status(500).json({
+      message: error.message,
+    });
+  }
 }
+
+// =========================
+// LOGIN USER
+// =========================
 async function loginUser(req, res) {
-    const {email, password} = req.body;
-    const user = await userModel.findOne({email});
+  try {
+    const { email, password } = req.body;
+
+    const user = await userModel.findOne({ email });
+
     if (!user) {
-        return res.status(404).json({
-            message: "User not found"
-        });
+      return res.status(404).json({
+        message: "User not found",
+      });
     }
-    const isMatch = await bcrypt.compare(password, user.password);
+
+    const isMatch = await bcrypt.compare(
+      password,
+      user.password
+    );
+
     if (!isMatch) {
-        return res.status(400).json({
-            message: "Invalid credentials"
-        });
+      return res.status(400).json({
+        message: "Invalid credentials",
+      });
     }
-    const token = jwt.sign({id:user._id}, process.env.JWT_SECRET);
+
+    const token = jwt.sign(
+      { id: user._id },
+      process.env.JWT_SECRET
+    );
+
     res.cookie("token", token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
-        maxAge: 24 * 60 * 60 * 1000 // 1 day
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 24 * 60 * 60 * 1000,
     });
-    res.status(200).json({
-        message: "Login successful"
+
+    return res.status(200).json({
+      message: "Login successful",
     });
+  } catch (error) {
+    console.log("LOGIN ERROR:", error);
+
+    return res.status(500).json({
+      message: error.message,
+    });
+  }
 }
+
+// =========================
+// GET CURRENT LOGGED-IN USER
+// =========================
+async function getMe(req, res) {
+  try {
+    const user = await userModel
+      .findById(req.user.id)
+      .select("-password -confirmPassword");
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    return res.status(200).json({
+      user,
+    });
+  } catch (error) {
+    console.log("GET ME ERROR:", error);
+
+    return res.status(500).json({
+      message: error.message,
+    });
+  }
+}
+
+// =========================
+// UPDATE PROFILE
+// =========================
 async function updateProfile(req, res) {
   try {
     const userId = req.user.id;
@@ -67,14 +140,17 @@ async function updateProfile(req, res) {
 
     if (req.file) {
       const result = await uplaodFile(req.file.buffer);
+
       updateData.profilePicture = result.url;
     }
 
-    const updatedUser = await userModel.findByIdAndUpdate(
-      userId,
-      updateData,
-      { new: true }
-    ).select("-password -confirmPassword");
+    const updatedUser = await userModel
+      .findByIdAndUpdate(
+        userId,
+        updateData,
+        { new: true }
+      )
+      .select("-password -confirmPassword");
 
     if (!updatedUser) {
       return res.status(404).json({
@@ -94,4 +170,43 @@ async function updateProfile(req, res) {
     });
   }
 }
-module.exports = {registerUser, loginUser, updateProfile};
+
+// =========================
+// DELETE ACCOUNT
+// =========================
+async function deleteAccount(req, res) {
+  try {
+    const userId = req.user.id;
+
+    const deletedUser = await userModel.findByIdAndDelete(userId);
+
+    if (!deletedUser) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    res.clearCookie("token");
+
+    return res.status(200).json({
+      message: "Account deleted successfully",
+    });
+  } catch (error) {
+    console.log("DELETE ACCOUNT ERROR:", error);
+
+    return res.status(500).json({
+      message: error.message,
+    });
+  }
+}
+
+// =========================
+// EXPORT
+// =========================
+module.exports = {
+  registerUser,
+  loginUser,
+  getMe,
+  updateProfile,
+  deleteAccount,
+};
